@@ -20,17 +20,24 @@ import android.content.Context
 import android.content.Intent
 import android.content.res.Resources
 import android.content.res.XmlResourceParser
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
+import android.text.format.DateFormat
 import android.util.Log
+import androidx.core.content.FileProvider
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.net.URL
 import java.nio.charset.StandardCharsets
+import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Locale
 import javax.net.ssl.HttpsURLConnection
 import kotlinx.coroutines.Dispatchers
@@ -103,12 +110,35 @@ object HeaderRepository {
     private const val WALLPAPER_FULL_URI = "https://dl.omnirom.org/images/wallpapers/"
 
     private const val HTTP_TIMEOUT_MS = 20_000
+    private const val DURABLE_HEADERS_DIR = "headers"
+    private const val FILE_PROVIDER_SUFFIX = ".fileprovider"
+    private const val SYSTEMUI_PACKAGE = "com.android.systemui"
+
+    private const val PREFS_NAME = "omnistyle_prefs"
+    private const val KEY_APPLIED_REMOTE_FILE = "applied_remote_header_file"
+    private const val KEY_APPLIED_REMOTE_URI = "applied_remote_header_uri"
 
     fun isNetworkConnected(context: Context): Boolean {
         val cm = context.getSystemService(ConnectivityManager::class.java) ?: return false
         val network = cm.activeNetwork ?: return false
         val caps = cm.getNetworkCapabilities(network) ?: return false
         return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
+    fun saveAppliedRemoteHeader(context: Context, fileName: String, uriString: String) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_APPLIED_REMOTE_FILE, fileName)
+            .putString(KEY_APPLIED_REMOTE_URI, uriString)
+            .apply()
+    }
+
+    fun getPersistedRemoteHeaderFileName(context: Context, activeFileUri: String): String {
+        if (activeFileUri.isBlank()) return ""
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val savedUri = prefs.getString(KEY_APPLIED_REMOTE_URI, "").orEmpty()
+        val savedFile = prefs.getString(KEY_APPLIED_REMOTE_FILE, "").orEmpty()
+        return if (savedUri.isNotBlank() && savedUri == activeFileUri) savedFile else ""
     }
 
     suspend fun loadAvailableHeaderPacks(context: Context): List<DaylightHeaderPack> =
@@ -170,6 +200,7 @@ object HeaderRepository {
         return try {
             val res = context.packageManager.getResourcesForApplication(packageName)
             parseDaylightHeaderPack(
+                context = context,
                 res = res,
                 label = label,
                 packId = packId,
@@ -183,6 +214,7 @@ object HeaderRepository {
     }
 
     private fun parseDaylightHeaderPack(
+        context: Context,
         res: Resources,
         label: String,
         packId: String,
@@ -195,6 +227,32 @@ object HeaderRepository {
             val dotIdx = headerName.lastIndexOf('.')
             val shortName = if (dotIdx >= 0) headerName.substring(dotIdx + 1) else headerName
             "$shortName.xml"
+        }
+
+        val locale = Locale.getDefault()
+        val is24Hour = DateFormat.is24HourFormat(context)
+        val timeFormat = SimpleDateFormat(
+            DateFormat.getBestDateTimePattern(locale, if (is24Hour) "Hm" else "hma"),
+            locale,
+        )
+        val dateFormat = SimpleDateFormat(
+            DateFormat.getBestDateTimePattern(locale, "MMMd"),
+            locale,
+        )
+        val calendar = Calendar.getInstance()
+
+        fun formatHour(hour: Int): String {
+            calendar.set(Calendar.HOUR_OF_DAY, hour.coerceIn(0, 23))
+            calendar.set(Calendar.MINUTE, 0)
+            calendar.set(Calendar.SECOND, 0)
+            calendar.set(Calendar.MILLISECOND, 0)
+            return timeFormat.format(calendar.time)
+        }
+
+        fun formatMonthDay(month: Int, day: Int): String {
+            calendar.set(Calendar.MONTH, (month - 1).coerceIn(0, 11))
+            calendar.set(Calendar.DAY_OF_MONTH, day.coerceIn(1, 31))
+            return dateFormat.format(calendar.time)
         }
 
         val items = mutableListOf<DaylightHeaderItem>()
@@ -226,10 +284,11 @@ object HeaderRepository {
                             if (!image.isNullOrBlank() && day != -1 && month != -1) {
                                 hasCalendar = true
                                 val resId = res.getIdentifier(image, "drawable", packageName)
+                                val datePart = formatMonthDay(month, day)
                                 val schedule = if (hour >= 0) {
-                                    String.format(Locale.US, "%02d/%02d · %02d:00", month, day, hour)
+                                    "$datePart · ${formatHour(hour)}"
                                 } else {
-                                    String.format(Locale.US, "%02d/%02d", month, day)
+                                    datePart
                                 }
                                 items.add(
                                     DaylightHeaderItem(
@@ -258,7 +317,7 @@ object HeaderRepository {
                                         displayName = name?.takeIf { it.isNotBlank() }
                                             ?: prettifyAssetName(image),
                                         resId = resId,
-                                        scheduleTag = String.format(Locale.US, "%02d:00", hour),
+                                        scheduleTag = formatHour(hour),
                                     )
                                 )
                             }
@@ -442,6 +501,69 @@ object HeaderRepository {
             }
         }
 
+    /**
+     * Downloads a remote header into durable app-internal storage (`filesDir/headers`) and
+     * returns a [FileProvider] `content://` URI with read access granted to SystemUI so
+     * [com.android.systemui.android.header.FileHeaderProvider] can stream it reliably without
+     * `file://` cache eviction or cross-process URI exposure issues.
+     */
+    suspend fun downloadToDurableHeaderUri(
+        context: Context,
+        url: String,
+        fileName: String,
+    ): Uri? = withContext(Dispatchers.IO) {
+        val headersDir = File(context.filesDir, DURABLE_HEADERS_DIR).apply { mkdirs() }
+        val ext = fileName.substringAfterLast('.', "").lowercase(Locale.ROOT)
+            .takeIf { it == "png" || it == "jpg" || it == "jpeg" || it == "webp" }
+            ?: "img"
+        val target = File(headersDir, "header_${url.hashCode().toUInt()}.$ext")
+        val temp = File(headersDir, "header_tmp_${System.nanoTime()}.$ext")
+
+        if (!downloadFile(url, temp)) {
+            runCatching { temp.delete() }
+            return@withContext null
+        }
+
+        if (target.exists()) {
+            target.delete()
+        }
+        val moved = temp.renameTo(target)
+        val finalFile = if (moved) {
+            target
+        } else {
+            runCatching {
+                temp.copyTo(target, overwrite = true)
+                temp.delete()
+                target
+            }.getOrNull() ?: run {
+                runCatching { temp.delete() }
+                return@withContext null
+            }
+        }
+
+        // Prune older downloaded headers so internal storage does not grow unboundedly.
+        headersDir.listFiles()?.forEach { existing ->
+            if (existing.isFile && existing.name != finalFile.name) {
+                runCatching { existing.delete() }
+            }
+        }
+
+        runCatching {
+            val authority = "${context.packageName}$FILE_PROVIDER_SUFFIX"
+            val contentUri = FileProvider.getUriForFile(context, authority, finalFile)
+            runCatching {
+                context.grantUriPermission(
+                    SYSTEMUI_PACKAGE,
+                    contentUri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                )
+            }
+            contentUri
+        }.onFailure { e ->
+            Log.e(TAG, "Failed creating FileProvider URI for ${finalFile.name}", e)
+        }.getOrNull()
+    }
+
     suspend fun downloadToCacheFile(
         context: Context,
         url: String,
@@ -452,13 +574,87 @@ object HeaderRepository {
         if (downloadFile(url, target)) target else null
     }
 
+    suspend fun savePackageDrawableToPictures(
+        context: Context,
+        packageName: String,
+        resId: Int,
+        imageName: String,
+    ): Uri? = withContext(Dispatchers.IO) {
+        if (resId == 0) return@withContext null
+        val resolver = context.contentResolver
+        val fileName = if (imageName.endsWith(".png", ignoreCase = true) ||
+            imageName.endsWith(".jpg", ignoreCase = true) ||
+            imageName.endsWith(".jpeg", ignoreCase = true)
+        ) {
+            imageName
+        } else {
+            "$imageName.png"
+        }
+        val isJpeg = fileName.endsWith(".jpg", ignoreCase = true) ||
+            fileName.endsWith(".jpeg", ignoreCase = true)
+        val mime = if (isJpeg) "image/jpeg" else "image/png"
+        val compressFormat = if (isJpeg) Bitmap.CompressFormat.JPEG else Bitmap.CompressFormat.PNG
+
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+            put(MediaStore.MediaColumns.MIME_TYPE, mime)
+            put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/OmniStyle")
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+        val outUri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+            ?: return@withContext null
+
+        val ok = runCatching {
+            val res = if (packageName == context.packageName) {
+                context.resources
+            } else {
+                context.packageManager.getResourcesForApplication(packageName)
+            }
+            val decoded = BitmapFactory.decodeResource(res, resId) ?: run {
+                val drawable = res.getDrawable(resId, null) ?: error("Drawable not found")
+                val w = drawable.intrinsicWidth.coerceAtLeast(1080)
+                val h = drawable.intrinsicHeight.coerceAtLeast(1920)
+                val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                val canvas = Canvas(bmp)
+                drawable.setBounds(0, 0, w, h)
+                drawable.draw(canvas)
+                bmp
+            }
+            try {
+                resolver.openOutputStream(outUri, "w")?.use { output ->
+                    if (!decoded.compress(compressFormat, 95, output)) {
+                        error("Bitmap compress failed")
+                    }
+                    output.flush()
+                } ?: error("Null output stream")
+            } finally {
+                decoded.recycle()
+            }
+            val done = ContentValues().apply {
+                put(MediaStore.MediaColumns.IS_PENDING, 0)
+            }
+            resolver.update(outUri, done, null, null)
+            true
+        }.getOrElse { e ->
+            Log.w(TAG, "Failed saving local drawable $imageName to Pictures", e)
+            runCatching { resolver.delete(outUri, null, null) }
+            false
+        }
+
+        if (ok) outUri else null
+    }
+
     suspend fun downloadToPictures(
         context: Context,
         url: String,
         fileName: String,
     ): Uri? = withContext(Dispatchers.IO) {
         val resolver = context.contentResolver
-        val mime = if (fileName.endsWith(".png", ignoreCase = true)) "image/png" else "image/jpeg"
+        val mime = when {
+            fileName.endsWith(".png", ignoreCase = true) -> "image/png"
+            fileName.endsWith(".webp", ignoreCase = true) -> "image/webp"
+            else -> "image/jpeg"
+        }
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
             put(MediaStore.MediaColumns.MIME_TYPE, mime)

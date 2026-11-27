@@ -66,6 +66,14 @@ sealed interface PreviewImageSource {
     }
 }
 
+data class ImageDimensions(
+    val width: Int,
+    val height: Int,
+) {
+    val aspectRatio: Float
+        get() = if (height > 0) width.toFloat() / height.toFloat() else 0.75f
+}
+
 private sealed interface PreviewDecodeState {
     data object Loading : PreviewDecodeState
     data class Ready(val bitmap: ImageBitmap) : PreviewDecodeState
@@ -78,8 +86,44 @@ object AsyncPreviewCache {
         override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount
     }
 
+    private val dimensionsCache = object : LruCache<String, ImageDimensions>(256) {}
+
     fun getCached(key: String): ImageBitmap? = synchronized(memoryCache) {
         memoryCache.get(key)?.takeIf { !it.isRecycled }?.asImageBitmap()
+    }
+
+    fun getCachedDimensions(key: String): ImageDimensions? = synchronized(dimensionsCache) {
+        dimensionsCache.get(key)
+    }
+
+    suspend fun loadDimensions(context: Context, source: PreviewImageSource): ImageDimensions? {
+        getCachedDimensions(source.cacheKey)?.let { return it }
+
+        return withContext(Dispatchers.IO) {
+            getCachedDimensions(source.cacheKey)?.let { return@withContext it }
+
+            val dims = when (source) {
+                is PreviewImageSource.PackageDrawable -> decodePackageDimensions(
+                    context = context,
+                    packageName = source.packageName,
+                    resId = source.resId,
+                )
+
+                is PreviewImageSource.RemoteUrl -> decodeRemoteDimensions(
+                    context = context,
+                    url = source.url,
+                )
+            }
+
+            if (dims != null && dims.width > 0 && dims.height > 0) {
+                synchronized(dimensionsCache) {
+                    dimensionsCache.put(source.cacheKey, dims)
+                }
+                dims
+            } else {
+                null
+            }
+        }
     }
 
     suspend fun load(context: Context, source: PreviewImageSource): ImageBitmap? {
@@ -96,12 +140,14 @@ object AsyncPreviewCache {
                     packageName = source.packageName,
                     resId = source.resId,
                     maxDimensionPx = source.maxDimensionPx,
+                    cacheKey = source.cacheKey,
                 )
 
                 is PreviewImageSource.RemoteUrl -> decodeRemoteUrl(
                     context = context,
                     url = source.url,
                     maxDimensionPx = source.maxDimensionPx,
+                    cacheKey = source.cacheKey,
                 )
             }
 
@@ -116,11 +162,67 @@ object AsyncPreviewCache {
         }
     }
 
+    private fun decodePackageDimensions(
+        context: Context,
+        packageName: String,
+        resId: Int,
+    ): ImageDimensions? {
+        if (resId == 0) return null
+        return runCatching {
+            val res = if (packageName == context.packageName) {
+                context.resources
+            } else {
+                context.packageManager.getResourcesForApplication(packageName)
+            }
+            val boundsOpts = BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
+            BitmapFactory.decodeResource(res, resId, boundsOpts)
+            if (boundsOpts.outWidth > 0 && boundsOpts.outHeight > 0) {
+                ImageDimensions(boundsOpts.outWidth, boundsOpts.outHeight)
+            } else {
+                val drawable = res.getDrawable(resId, null) ?: return@runCatching null
+                val w = drawable.intrinsicWidth
+                val h = drawable.intrinsicHeight
+                if (w > 0 && h > 0) ImageDimensions(w, h) else null
+            }
+        }.getOrNull()
+    }
+
+    private fun decodeRemoteDimensions(
+        context: Context,
+        url: String,
+    ): ImageDimensions? {
+        return runCatching {
+            val cacheFile = remoteThumbCacheFile(context, url)
+            if (!cacheFile.exists() || cacheFile.length() == 0L) {
+                if (!HeaderRepository.downloadFile(url, cacheFile)) {
+                    return@runCatching null
+                }
+            }
+            val boundsOpts = BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
+            BitmapFactory.decodeFile(cacheFile.absolutePath, boundsOpts)
+            if (boundsOpts.outWidth > 0 && boundsOpts.outHeight > 0) {
+                ImageDimensions(boundsOpts.outWidth, boundsOpts.outHeight)
+            } else {
+                null
+            }
+        }.getOrNull()
+    }
+
+    private fun remoteThumbCacheFile(context: Context, url: String): File {
+        val thumbDir = File(context.cacheDir, "remote_thumbs").apply { mkdirs() }
+        return File(thumbDir, "thumb_${url.hashCode().toUInt()}.img")
+    }
+
     private fun decodePackageDrawable(
         context: Context,
         packageName: String,
         resId: Int,
         maxDimensionPx: Int,
+        cacheKey: String,
     ): Bitmap? {
         if (resId == 0) return null
         return runCatching {
@@ -135,6 +237,12 @@ object AsyncPreviewCache {
             }
             BitmapFactory.decodeResource(res, resId, boundsOpts)
             if (boundsOpts.outWidth > 0 && boundsOpts.outHeight > 0) {
+                synchronized(dimensionsCache) {
+                    dimensionsCache.put(
+                        cacheKey,
+                        ImageDimensions(boundsOpts.outWidth, boundsOpts.outHeight),
+                    )
+                }
                 val decodeOpts = BitmapFactory.Options().apply {
                     inSampleSize = computeInSampleSize(
                         boundsOpts.outWidth,
@@ -149,6 +257,9 @@ object AsyncPreviewCache {
             val drawable = res.getDrawable(resId, null) ?: return@runCatching null
             val rawW = drawable.intrinsicWidth.coerceAtLeast(256)
             val rawH = drawable.intrinsicHeight.coerceAtLeast(128)
+            synchronized(dimensionsCache) {
+                dimensionsCache.put(cacheKey, ImageDimensions(rawW, rawH))
+            }
             val scale = (maxDimensionPx.toFloat() / maxOf(rawW, rawH).toFloat()).coerceAtMost(1f)
             val targetW = (rawW * scale).toInt().coerceAtLeast(1)
             val targetH = (rawH * scale).toInt().coerceAtLeast(1)
@@ -164,10 +275,10 @@ object AsyncPreviewCache {
         context: Context,
         url: String,
         maxDimensionPx: Int,
+        cacheKey: String,
     ): Bitmap? {
         return runCatching {
-            val thumbDir = File(context.cacheDir, "remote_thumbs").apply { mkdirs() }
-            val cacheFile = File(thumbDir, "thumb_${url.hashCode().toUInt()}.img")
+            val cacheFile = remoteThumbCacheFile(context, url)
             if (!cacheFile.exists() || cacheFile.length() == 0L) {
                 if (!HeaderRepository.downloadFile(url, cacheFile)) {
                     return@runCatching null
@@ -180,6 +291,12 @@ object AsyncPreviewCache {
             if (boundsOpts.outWidth <= 0 || boundsOpts.outHeight <= 0) {
                 cacheFile.delete()
                 return@runCatching null
+            }
+            synchronized(dimensionsCache) {
+                dimensionsCache.put(
+                    cacheKey,
+                    ImageDimensions(boundsOpts.outWidth, boundsOpts.outHeight),
+                )
             }
             val decodeOpts = BitmapFactory.Options().apply {
                 inSampleSize = computeInSampleSize(

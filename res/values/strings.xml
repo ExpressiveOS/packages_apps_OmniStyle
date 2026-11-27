@@ -17,6 +17,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 -->
 <resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
+    <string name="app_name" translatable="false">OmniStyle</string>
     <string name="browse_header">Headers</string>
     <string name="custom_header_image_notice">Header image set</string>
     <string name="custom_header_pack_notice">Dynamic header pack applied</string>
@@ -28,10 +29,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     <string name="wallpaper_type_system">Home screen</string>
     <string name="wallpaper_type_lock">Lock screen</string>
     <string name="wallpaper_applied_notice">Wallpaper applied</string>
-    <string name="header_creator_label">Creator\u003a </string>
+    <string name="wallpaper_save_gallery_action">Save to gallery</string>
+    <string name="wallpaper_save_failed_notice">Failed to save wallpaper</string>
+    <string name="wallpaper_resolution_format"><xliff:g id="width" example="1440">%1$d</xliff:g> × <xliff:g id="height" example="3120">%2$d</xliff:g></string>
+    <string name="header_creator_label">Creator: </string>
+    <string name="header_creator_format"><xliff:g id="label" example="Creator">%1$s</xliff:g> · <xliff:g id="creator" example="OmniROM">%2$s</xliff:g></string>
     <string name="no_crop_activity_dialog_text">Omni Gallery app is required to set wallpaper</string>
     <string name="no_crop_activity_dialog_title">Gallery missing</string>
-    <string name="scrolling_wall_dialog_text">Do you want to crop the wallpaper to the display size\u003f</string>
+    <string name="scrolling_wall_dialog_text">Do you want to crop the wallpaper to the display size?</string>
     <string name="scrolling_wall_dialog_title">Crop wallpaper</string>
     <string name="scrolling_wall_yes">No</string>
     <string name="scrolling_wall_no">Yes</string>
@@ -66,4 +71,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     <string name="header_empty_state">No headers available in this collection</string>
     <string name="wallpaper_empty_state">No wallpapers available</string>
     <string name="retry_action">Retry</string>
+
+    <!-- Bundled header pack labels -->
+    <string name="header_pack_avengers">Avengers</string>
+    <string name="header_pack_beaches">Beaches</string>
+    <string name="header_pack_comic">JLA, Xmen and Avengers</string>
+    <string name="header_pack_scenes1">Flat Scenery</string>
+    <string name="header_pack_scenes2">Flat Scenery 2</string>
+    <string name="header_pack_forest">Forest</string>
+    <string name="header_pack_nature_random">Nature (random)</string>
+    <string name="header_pack_nature">Nature</string>
+    <string name="header_pack_poly">Poly</string>
+    <string name="header_pack_space_interval">Space (interval)</string>
+    <string name="header_pack_wavvy">Wavvy</string>
+    <string name="header_pack_western">Western</string>
+    <string name="header_pack_scenery">Scenery - Anime</string>
 </resources>

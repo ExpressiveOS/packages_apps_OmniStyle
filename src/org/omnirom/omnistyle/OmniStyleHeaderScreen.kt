@@ -13,17 +13,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@file:OptIn(
+    ExperimentalLayoutApi::class,
+    ExperimentalMaterial3Api::class,
+    ExperimentalMaterial3ExpressiveApi::class,
+)
 
 package org.omnirom.omnistyle
 
 import android.content.Context
 import android.database.ContentObserver
-import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
-import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -33,13 +35,18 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -49,8 +56,10 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Check
@@ -64,6 +73,8 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -83,6 +94,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -91,6 +103,7 @@ import com.android.axion.compose.expressive.ExpressiveMorphLoadingIndicator
 import com.android.axion.compose.expressive.ExpressiveSegmentOption
 import com.android.axion.compose.expressive.ExpressiveSegmentedButtonRow
 import com.android.axion.compose.expressive.ExpressiveShapePreset
+import com.android.axion.compose.expressive.ExpressiveSnackbarHost
 import com.android.axion.compose.expressive.ExpressiveToolbarPrimaryPill
 import com.android.axion.compose.expressive.rememberExpressiveHaptics
 import com.android.axion.compose.scaffold.AxionScaffold
@@ -165,8 +178,10 @@ fun OmniStyleHeaderScreen(
     onBackClick: () -> Unit,
 ) {
     val context = LocalContext.current
+    val layoutDirection = LocalLayoutDirection.current
     val scope = rememberCoroutineScope()
     val haptics = rememberExpressiveHaptics()
+    val snackbarHostState = remember { SnackbarHostState() }
     val activeSelection = rememberActiveHeaderSelection()
 
     var sourceTab by rememberSaveable { mutableStateOf(HeaderSourceTab.LOCAL) }
@@ -178,10 +193,30 @@ fun OmniStyleHeaderScreen(
     var remoteError by remember { mutableStateOf(false) }
     var remoteItems by remember { mutableStateOf<List<RemoteMediaItem>>(emptyList()) }
     var selectedRemoteTag by rememberSaveable { mutableStateOf("") }
-    var appliedRemoteFileName by rememberSaveable { mutableStateOf("") }
+    var appliedRemoteFileName by remember(context, activeSelection.fileUri, activeSelection.provider) {
+        mutableStateOf(
+            if (activeSelection.provider == "file") {
+                HeaderRepository.getPersistedRemoteHeaderFileName(context, activeSelection.fileUri)
+            } else {
+                ""
+            }
+        )
+    }
     var busyDownloadFileName by remember { mutableStateOf<String?>(null) }
 
     var previewModalTarget by remember { mutableStateOf<PreviewModalTarget?>(null) }
+
+    fun showMessage(messageResId: Int, duration: SnackbarDuration = SnackbarDuration.Short) {
+        val message = context.getString(messageResId)
+        scope.launch {
+            snackbarHostState.currentSnackbarData?.dismiss()
+            snackbarHostState.showSnackbar(
+                message = message,
+                duration = duration,
+                withDismissAction = duration == SnackbarDuration.Long,
+            )
+        }
+    }
 
     LaunchedEffect(singleThemePackOnly) {
         packsLoading = true
@@ -202,7 +237,7 @@ fun OmniStyleHeaderScreen(
     fun triggerRemoteLoad() {
         if (!HeaderRepository.isNetworkConnected(context)) {
             remoteError = true
-            Toast.makeText(context, R.string.no_network_message, Toast.LENGTH_SHORT).show()
+            showMessage(R.string.no_network_message)
             return
         }
         scope.launch {
@@ -218,11 +253,10 @@ fun OmniStyleHeaderScreen(
                 }
                 .onFailure {
                     remoteError = true
-                    Toast.makeText(
-                        context,
+                    showMessage(
                         R.string.download_wallpaper_list_failed_notice,
-                        Toast.LENGTH_LONG,
-                    ).show()
+                        SnackbarDuration.Long,
+                    )
                 }
             remoteLoading = false
         }
@@ -240,7 +274,7 @@ fun OmniStyleHeaderScreen(
             "static",
         )
         haptics.performConfirm()
-        Toast.makeText(context, R.string.custom_header_image_notice, Toast.LENGTH_SHORT).show()
+        showMessage(R.string.custom_header_image_notice)
     }
 
     fun applyDynamicPack(pack: DaylightHeaderPack) {
@@ -255,22 +289,23 @@ fun OmniStyleHeaderScreen(
             "daylight",
         )
         haptics.performConfirm()
-        Toast.makeText(context, R.string.custom_header_pack_notice, Toast.LENGTH_SHORT).show()
+        showMessage(R.string.custom_header_pack_notice)
     }
 
     fun applyRemoteHeader(item: RemoteMediaItem) {
         if (busyDownloadFileName != null) return
         scope.launch {
             busyDownloadFileName = item.fileName
-            Toast.makeText(context, R.string.download_header_notice, Toast.LENGTH_SHORT).show()
-            val file = HeaderRepository.downloadToCacheFile(
+            showMessage(R.string.download_header_notice)
+            val contentUri = HeaderRepository.downloadToDurableHeaderUri(
                 context = context,
                 url = item.fullUrl,
-                prefix = "header_",
+                fileName = item.fileName,
             )
             busyDownloadFileName = null
-            if (file != null && file.exists()) {
-                val imageUri = Uri.fromFile(file)
+            if (contentUri != null) {
+                val uriString = contentUri.toString()
+                HeaderRepository.saveAppliedRemoteHeader(context, item.fileName, uriString)
                 Settings.System.putString(
                     context.contentResolver,
                     Settings.System.STATUS_BAR_CUSTOM_HEADER_PROVIDER,
@@ -279,23 +314,21 @@ fun OmniStyleHeaderScreen(
                 Settings.System.putString(
                     context.contentResolver,
                     Settings.System.STATUS_BAR_FILE_HEADER_IMAGE,
-                    imageUri.toString(),
+                    uriString,
                 )
                 appliedRemoteFileName = item.fileName
                 haptics.performConfirm()
-                Toast.makeText(context, R.string.custom_header_image_notice, Toast.LENGTH_SHORT)
-                    .show()
+                showMessage(R.string.custom_header_image_notice)
             } else {
                 haptics.performBoundaryBump()
-                Toast.makeText(context, R.string.download_header_failed_notice, Toast.LENGTH_LONG)
-                    .show()
+                showMessage(R.string.download_header_failed_notice, SnackbarDuration.Long)
             }
         }
     }
 
     fun saveRemoteHeaderToPictures(item: RemoteMediaItem) {
         scope.launch {
-            Toast.makeText(context, R.string.download_header_notice, Toast.LENGTH_SHORT).show()
+            showMessage(R.string.download_header_notice)
             val savedUri = HeaderRepository.downloadToPictures(
                 context = context,
                 url = item.fullUrl,
@@ -303,254 +336,276 @@ fun OmniStyleHeaderScreen(
             )
             if (savedUri != null) {
                 haptics.performConfirm()
-                Toast.makeText(context, R.string.header_saved_pictures_notice, Toast.LENGTH_SHORT)
-                    .show()
+                showMessage(R.string.header_saved_pictures_notice)
             } else {
                 haptics.performBoundaryBump()
-                Toast.makeText(context, R.string.download_header_failed_notice, Toast.LENGTH_LONG)
-                    .show()
+                showMessage(R.string.download_header_failed_notice, SnackbarDuration.Long)
             }
         }
     }
 
-    AxionScaffold(
-        title = title,
-        onBackClick = onBackClick,
-        collapsedByDefault = false,
-    ) { innerPadding ->
-        BoxWithConstraints(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
-        ) {
-            val columns = if (maxWidth >= 600.dp) 2 else 1
-            val currentPack = packs.getOrNull(selectedPackIndex.coerceIn(0, (packs.size - 1).coerceAtLeast(0)))
-            val remoteTags = remember(remoteItems) {
-                remoteItems.map { it.tag }.distinct().sorted()
-            }
-            val filteredRemoteItems = remember(remoteItems, selectedRemoteTag) {
-                if (selectedRemoteTag.isBlank()) {
-                    remoteItems
-                } else {
-                    remoteItems.filter { it.tag == selectedRemoteTag }
-                }
-            }
-
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(columns),
-                contentPadding = PaddingValues(
-                    start = 16.dp,
-                    end = 16.dp,
-                    top = 8.dp,
-                    bottom = 32.dp,
-                ),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+    Box(modifier = Modifier.fillMaxSize()) {
+        AxionScaffold(
+            title = title,
+            onBackClick = onBackClick,
+            collapsedByDefault = false,
+        ) { innerPadding ->
+            BoxWithConstraints(
                 modifier = Modifier.fillMaxSize(),
             ) {
-                if (!singleThemePackOnly) {
-                    item(span = { GridItemSpan(maxLineSpan) }) {
-                        ExpressiveSegmentedButtonRow(
-                            options = listOf(
-                                ExpressiveSegmentOption(
-                                    value = HeaderSourceTab.LOCAL,
-                                    label = stringResource(R.string.header_location_local),
-                                    icon = Icons.Rounded.Collections,
-                                ),
-                                ExpressiveSegmentOption(
-                                    value = HeaderSourceTab.REMOTE,
-                                    label = stringResource(R.string.header_location_online),
-                                    icon = Icons.Rounded.CloudQueue,
-                                ),
-                            ),
-                            selectedValue = sourceTab,
-                            onValueSelected = { next ->
-                                sourceTab = next
-                                if (next == HeaderSourceTab.REMOTE && remoteItems.isEmpty()) {
-                                    triggerRemoteLoad()
-                                }
-                            },
-                        )
+                val columns = if (maxWidth >= 600.dp) 2 else 1
+                val currentPack =
+                    packs.getOrNull(selectedPackIndex.coerceIn(0, (packs.size - 1).coerceAtLeast(0)))
+                val remoteTags = remember(remoteItems) {
+                    remoteItems.map { it.tag }.distinct().sorted()
+                }
+                val filteredRemoteItems = remember(remoteItems, selectedRemoteTag) {
+                    if (selectedRemoteTag.isBlank()) {
+                        remoteItems
+                    } else {
+                        remoteItems.filter { it.tag == selectedRemoteTag }
                     }
                 }
 
-                if (sourceTab == HeaderSourceTab.LOCAL) {
-                    if (packsLoading) {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(columns),
+                    contentPadding = PaddingValues(
+                        start = innerPadding.calculateStartPadding(layoutDirection) + 16.dp,
+                        end = innerPadding.calculateEndPadding(layoutDirection) + 16.dp,
+                        top = innerPadding.calculateTopPadding() + 8.dp,
+                        bottom = innerPadding.calculateBottomPadding() + 32.dp,
+                    ),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    if (!singleThemePackOnly) {
                         item(span = { GridItemSpan(maxLineSpan) }) {
-                            CenteredExpressiveLoader()
-                        }
-                    } else if (packs.isEmpty()) {
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            EmptyStateBentoCard(
-                                message = stringResource(R.string.header_empty_state),
+                            ExpressiveSegmentedButtonRow(
+                                options = listOf(
+                                    ExpressiveSegmentOption(
+                                        value = HeaderSourceTab.LOCAL,
+                                        label = stringResource(R.string.header_location_local),
+                                        icon = Icons.Rounded.Collections,
+                                    ),
+                                    ExpressiveSegmentOption(
+                                        value = HeaderSourceTab.REMOTE,
+                                        label = stringResource(R.string.header_location_online),
+                                        icon = Icons.Rounded.CloudQueue,
+                                    ),
+                                ),
+                                selectedValue = sourceTab,
+                                onValueSelected = { next ->
+                                    sourceTab = next
+                                    if (next == HeaderSourceTab.REMOTE && remoteItems.isEmpty()) {
+                                        triggerRemoteLoad()
+                                    }
+                                },
                             )
                         }
-                    } else {
-                        if (packs.size > 1) {
+                    }
+
+                    if (sourceTab == HeaderSourceTab.LOCAL) {
+                        if (packsLoading) {
                             item(span = { GridItemSpan(maxLineSpan) }) {
-                                LazyRow(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    contentPadding = PaddingValues(vertical = 4.dp),
-                                ) {
-                                    itemsIndexed(packs, key = { _, p -> p.packId }) { idx, pack ->
-                                        val isSelectedPack = idx == selectedPackIndex
-                                        ExpressiveMorphButton(
-                                            onClick = { selectedPackIndex = idx },
-                                            selected = isSelectedPack,
-                                            hapticOnClick = false,
-                                            contentPadding = PaddingValues(
-                                                horizontal = 16.dp,
-                                                vertical = 10.dp,
-                                            ),
-                                            containerColor = if (isSelectedPack) {
-                                                MaterialTheme.colorScheme.primary
-                                            } else {
-                                                MaterialTheme.colorScheme.surfaceContainerLow
-                                            },
-                                            contentColor = if (isSelectedPack) {
-                                                MaterialTheme.colorScheme.onPrimary
-                                            } else {
-                                                MaterialTheme.colorScheme.onSurface
-                                            },
-                                        ) {
-                                            Text(
-                                                text = pack.label,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                            )
+                                CenteredExpressiveLoader()
+                            }
+                        } else if (packs.isEmpty()) {
+                            item(span = { GridItemSpan(maxLineSpan) }) {
+                                EmptyStateBentoCard(
+                                    message = stringResource(R.string.header_empty_state),
+                                )
+                            }
+                        } else {
+                            if (packs.size > 1) {
+                                item(span = { GridItemSpan(maxLineSpan) }) {
+                                    LazyRow(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        contentPadding = PaddingValues(vertical = 4.dp),
+                                    ) {
+                                        itemsIndexed(packs, key = { _, p -> p.packId }) { idx, pack ->
+                                            val isSelectedPack = idx == selectedPackIndex
+                                            ExpressiveMorphButton(
+                                                onClick = {
+                                                    if (selectedPackIndex != idx) {
+                                                        haptics.performStepTick()
+                                                        selectedPackIndex = idx
+                                                    }
+                                                },
+                                                selected = isSelectedPack,
+                                                hapticOnClick = false,
+                                                contentPadding = PaddingValues(
+                                                    horizontal = 16.dp,
+                                                    vertical = 10.dp,
+                                                ),
+                                                containerColor = if (isSelectedPack) {
+                                                    MaterialTheme.colorScheme.primary
+                                                } else {
+                                                    MaterialTheme.colorScheme.surfaceContainerLow
+                                                },
+                                                contentColor = if (isSelectedPack) {
+                                                    MaterialTheme.colorScheme.onPrimary
+                                                } else {
+                                                    MaterialTheme.colorScheme.onSurface
+                                                },
+                                            ) {
+                                                Text(
+                                                    text = pack.label,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                )
+                                            }
                                         }
                                     }
                                 }
                             }
-                        }
 
-                        if (currentPack != null) {
+                            if (currentPack != null) {
+                                item(span = { GridItemSpan(maxLineSpan) }) {
+                                    val isPackActive = activeSelection.provider == "daylight" &&
+                                        activeSelection.daylightPack == currentPack.packId
+                                    HeaderPackSummaryCard(
+                                        pack = currentPack,
+                                        isPackActive = isPackActive,
+                                        onApplyPack = { applyDynamicPack(currentPack) },
+                                    )
+                                }
+
+                                items(
+                                    items = currentPack.items,
+                                    key = { "${it.packageName}/${it.imageName}:${it.scheduleTag.orEmpty()}" },
+                                ) { item ->
+                                    val isSelected = activeSelection.provider == "static" &&
+                                        activeSelection.staticImage == item.staticSettingValue
+                                    HeaderPreviewBentoCard(
+                                        title = item.displayName,
+                                        subtitle = item.scheduleTag,
+                                        source = PreviewImageSource.PackageDrawable(
+                                            packageName = item.packageName,
+                                            resId = item.resId,
+                                        ),
+                                        isSelected = isSelected,
+                                        isBusy = false,
+                                        onClick = {
+                                            if (pickerMode) {
+                                                applyStaticHeader(item)
+                                            } else {
+                                                haptics.performStepTick()
+                                                previewModalTarget =
+                                                    PreviewModalTarget.Local(item, currentPack.label)
+                                            }
+                                        },
+                                        onLongClick = {
+                                            haptics.performLongPress()
+                                            previewModalTarget =
+                                                PreviewModalTarget.Local(item, currentPack.label)
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        if (remoteLoading) {
                             item(span = { GridItemSpan(maxLineSpan) }) {
-                                val isPackActive = activeSelection.provider == "daylight" &&
-                                    activeSelection.daylightPack == currentPack.packId
-                                HeaderPackSummaryCard(
-                                    pack = currentPack,
-                                    isPackActive = isPackActive,
-                                    onApplyPack = { applyDynamicPack(currentPack) },
+                                CenteredExpressiveLoader()
+                            }
+                        } else if (remoteError || remoteItems.isEmpty()) {
+                            item(span = { GridItemSpan(maxLineSpan) }) {
+                                OfflineOrErrorBentoCard(
+                                    message = stringResource(
+                                        if (!HeaderRepository.isNetworkConnected(context)) {
+                                            R.string.no_network_message
+                                        } else {
+                                            R.string.download_wallpaper_list_failed_notice
+                                        }
+                                    ),
+                                    onRetry = { triggerRemoteLoad() },
                                 )
+                            }
+                        } else {
+                            if (remoteTags.size > 1) {
+                                item(span = { GridItemSpan(maxLineSpan) }) {
+                                    LazyRow(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        contentPadding = PaddingValues(vertical = 4.dp),
+                                    ) {
+                                        itemsIndexed(remoteTags, key = { _, tag -> tag }) { _, tag ->
+                                            val selected = tag == selectedRemoteTag
+                                            ExpressiveMorphButton(
+                                                onClick = {
+                                                    if (selectedRemoteTag != tag) {
+                                                        haptics.performStepTick()
+                                                        selectedRemoteTag = tag
+                                                    }
+                                                },
+                                                selected = selected,
+                                                hapticOnClick = false,
+                                                contentPadding = PaddingValues(
+                                                    horizontal = 16.dp,
+                                                    vertical = 10.dp,
+                                                ),
+                                                containerColor = if (selected) {
+                                                    MaterialTheme.colorScheme.primary
+                                                } else {
+                                                    MaterialTheme.colorScheme.surfaceContainerLow
+                                                },
+                                                contentColor = if (selected) {
+                                                    MaterialTheme.colorScheme.onPrimary
+                                                } else {
+                                                    MaterialTheme.colorScheme.onSurface
+                                                },
+                                            ) {
+                                                Text(
+                                                    text = tag.replaceFirstChar { it.uppercase() },
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                             }
 
                             items(
-                                items = currentPack.items,
-                                key = { "${it.packageName}/${it.imageName}:${it.scheduleTag.orEmpty()}" },
-                            ) { item ->
-                                val isSelected = activeSelection.provider == "static" &&
-                                    activeSelection.staticImage == item.staticSettingValue
+                                items = filteredRemoteItems,
+                                key = { it.fileName },
+                            ) { remoteItem ->
+                                val isSelected = activeSelection.provider == "file" &&
+                                    appliedRemoteFileName == remoteItem.fileName
                                 HeaderPreviewBentoCard(
-                                    title = item.displayName,
-                                    subtitle = item.scheduleTag,
-                                    source = PreviewImageSource.PackageDrawable(
-                                        packageName = item.packageName,
-                                        resId = item.resId,
-                                    ),
+                                    title = remoteItem.displayName,
+                                    subtitle = remoteItem.creator,
+                                    source = PreviewImageSource.RemoteUrl(remoteItem.thumbUrl),
                                     isSelected = isSelected,
-                                    isBusy = false,
+                                    isBusy = busyDownloadFileName == remoteItem.fileName,
                                     onClick = {
                                         if (pickerMode) {
-                                            applyStaticHeader(item)
+                                            applyRemoteHeader(remoteItem)
                                         } else {
                                             haptics.performStepTick()
                                             previewModalTarget =
-                                                PreviewModalTarget.Local(item, currentPack.label)
+                                                PreviewModalTarget.Remote(remoteItem)
                                         }
                                     },
                                     onLongClick = {
                                         haptics.performLongPress()
-                                        previewModalTarget =
-                                            PreviewModalTarget.Local(item, currentPack.label)
+                                        previewModalTarget = PreviewModalTarget.Remote(remoteItem)
                                     },
                                 )
                             }
-                        }
-                    }
-                } else {
-                    if (remoteLoading) {
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            CenteredExpressiveLoader()
-                        }
-                    } else if (remoteError || remoteItems.isEmpty()) {
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            OfflineOrErrorBentoCard(
-                                message = stringResource(
-                                    if (!HeaderRepository.isNetworkConnected(context)) {
-                                        R.string.no_network_message
-                                    } else {
-                                        R.string.download_wallpaper_list_failed_notice
-                                    }
-                                ),
-                                onRetry = { triggerRemoteLoad() },
-                            )
-                        }
-                    } else {
-                        if (remoteTags.size > 1) {
-                            item(span = { GridItemSpan(maxLineSpan) }) {
-                                LazyRow(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    contentPadding = PaddingValues(vertical = 4.dp),
-                                ) {
-                                    itemsIndexed(remoteTags, key = { _, tag -> tag }) { _, tag ->
-                                        val selected = tag == selectedRemoteTag
-                                        ExpressiveMorphButton(
-                                            onClick = { selectedRemoteTag = tag },
-                                            selected = selected,
-                                            hapticOnClick = false,
-                                            contentPadding = PaddingValues(
-                                                horizontal = 16.dp,
-                                                vertical = 10.dp,
-                                            ),
-                                            containerColor = if (selected) {
-                                                MaterialTheme.colorScheme.primary
-                                            } else {
-                                                MaterialTheme.colorScheme.surfaceContainerLow
-                                            },
-                                            contentColor = if (selected) {
-                                                MaterialTheme.colorScheme.onPrimary
-                                            } else {
-                                                MaterialTheme.colorScheme.onSurface
-                                            },
-                                        ) {
-                                            Text(text = tag.replaceFirstChar { it.uppercase() })
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        items(
-                            items = filteredRemoteItems,
-                            key = { it.fileName },
-                        ) { remoteItem ->
-                            val isSelected = activeSelection.provider == "file" &&
-                                appliedRemoteFileName == remoteItem.fileName
-                            HeaderPreviewBentoCard(
-                                title = remoteItem.displayName,
-                                subtitle = remoteItem.creator,
-                                source = PreviewImageSource.RemoteUrl(remoteItem.thumbUrl),
-                                isSelected = isSelected,
-                                isBusy = busyDownloadFileName == remoteItem.fileName,
-                                onClick = {
-                                    if (pickerMode) {
-                                        applyRemoteHeader(remoteItem)
-                                    } else {
-                                        haptics.performStepTick()
-                                        previewModalTarget = PreviewModalTarget.Remote(remoteItem)
-                                    }
-                                },
-                                onLongClick = {
-                                    haptics.performLongPress()
-                                    saveRemoteHeaderToPictures(remoteItem)
-                                },
-                            )
                         }
                     }
                 }
             }
         }
+
+        ExpressiveSnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+        )
     }
 
     val currentModal = previewModalTarget
@@ -565,8 +620,10 @@ fun OmniStyleHeaderScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .navigationBarsPadding()
                     .padding(horizontal = 24.dp)
-                    .padding(bottom = 32.dp),
+                    .padding(bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 val (previewTitle, previewSubtitle, previewSource) = when (currentModal) {
@@ -596,11 +653,13 @@ fun OmniStyleHeaderScreen(
                         style = MaterialTheme.typography.headlineSmallEmphasized,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
-                    Text(
-                        text = previewSubtitle,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    if (previewSubtitle.isNotBlank()) {
+                        Text(
+                            text = previewSubtitle,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
 
                 Box(
@@ -615,10 +674,11 @@ fun OmniStyleHeaderScreen(
                     )
                 }
 
-                Row(
+                FlowRow(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
-                    verticalAlignment = Alignment.CenterVertically,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    itemVerticalAlignment = Alignment.CenterVertically,
                 ) {
                     if (currentModal is PreviewModalTarget.Remote) {
                         ExpressiveMorphButton(
@@ -636,7 +696,11 @@ fun OmniStyleHeaderScreen(
                                 )
                             },
                         ) {
-                            Text(text = stringResource(R.string.header_save_image_action))
+                            Text(
+                                text = stringResource(R.string.header_save_image_action),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                         }
                     }
 
@@ -699,9 +763,14 @@ private fun HeaderPackSummaryCard(
                         style = MaterialTheme.typography.titleLargeEmphasized,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
-                    if (!pack.creator.isNullOrBlank()) {
+                    val creator = pack.creator?.takeIf { it.isNotBlank() }
+                    if (creator != null) {
+                        val creatorLabel = stringResource(R.string.header_creator_label)
+                            .trim()
+                            .trimEnd(':', '\uFF1A')
+                            .trim()
                         Text(
-                            text = stringResource(R.string.header_creator_label) + pack.creator,
+                            text = stringResource(R.string.header_creator_format, creatorLabel, creator),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -713,25 +782,21 @@ private fun HeaderPackSummaryCard(
                 }
             }
 
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                itemVerticalAlignment = Alignment.CenterVertically,
             ) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    TonalMetadataChip(
-                        text = stringResource(R.string.header_pack_items_count, pack.items.size),
-                        tabular = true,
-                    )
-                    TonalMetadataChip(
-                        text = scheduleText,
-                        icon = Icons.Rounded.Schedule,
-                        tabular = pack.scheduleKind == PackScheduleKind.INTERVAL,
-                    )
-                }
+                TonalMetadataChip(
+                    text = stringResource(R.string.header_pack_items_count, pack.items.size),
+                    tabular = true,
+                )
+                TonalMetadataChip(
+                    text = scheduleText,
+                    icon = Icons.Rounded.Schedule,
+                    tabular = pack.scheduleKind == PackScheduleKind.INTERVAL,
+                )
 
                 if (!isPackActive) {
                     ExpressiveMorphButton(
@@ -740,7 +805,7 @@ private fun HeaderPackSummaryCard(
                         pressedPreset = ExpressiveShapePreset.SQUIRCLE,
                         containerColor = MaterialTheme.colorScheme.secondaryContainer,
                         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Rounded.AutoAwesome,
@@ -751,7 +816,9 @@ private fun HeaderPackSummaryCard(
                     ) {
                         Text(
                             text = stringResource(R.string.header_apply_pack_action),
-                            style = MaterialTheme.typography.labelMediumEmphasized,
+                            style = MaterialTheme.typography.labelLargeEmphasized,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
@@ -769,7 +836,7 @@ private fun HeaderPreviewBentoCard(
     isSelected: Boolean,
     isBusy: Boolean,
     onClick: () -> Unit,
-    onLongClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
 ) {
     val cardShape = RoundedCornerShape(24.dp)
 

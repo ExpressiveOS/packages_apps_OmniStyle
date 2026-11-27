@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     Copyright (C) 2026 The ExpressiveOS Project
+     SPDX-License-Identifier: Apache-2.0
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Top header banner card -->
+    <path
+        android:fillColor="#FFEADDFF"
+        android:pathData="M30,32 C30,28.69 32.69,26 36,26 L72,26 C75.31,26 78,28.69 78,32 L78,46 C78,49.31 75.31,52 72,52 L36,52 C32.69,52 30,49.31 30,46 Z" />
+    <!-- Header banner horizon wave accent -->
+    <path
+        android:fillColor="#FFD0BCFF"
+        android:pathData="M30,43 C40,36 52,46 64,39 C70,35.5 75,37 78,40 L78,46 C78,49.31 75.31,52 72,52 L36,52 C32.69,52 30,49.31 30,46 Z" />
+    <!-- Bottom-left wallpaper portrait tile -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M30,62 C30,58.69 32.69,56 36,56 L51,56 C54.31,56 57,58.69 57,62 L57,76 C57,79.31 54.31,82 51,82 L36,82 C32.69,82 30,79.31 30,76 Z" />
+    <!-- Bottom-right wallpaper accent tile -->
+    <path
+        android:fillColor="#FFEFB8C8"
+        android:pathData="M61,62 C61,58.69 63.69,56 67,56 L72,56 C75.31,56 78,58.69 78,62 L78,76 C78,79.31 75.31,82 72,82 L67,82 C63.69,82 61,79.31 61,76 Z" />
+    <!-- Expressive sparkle on top-right of banner -->
+    <path
+        android:fillColor="#FF4F378B"
+        android:pathData="M69,32 L70.4,35.6 L74,37 L70.4,38.4 L69,42 L67.6,38.4 L64,37 L67.6,35.6 Z" />
+</vector>

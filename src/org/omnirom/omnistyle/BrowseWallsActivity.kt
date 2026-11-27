@@ -36,7 +36,6 @@ class BrowseWallsActivity : ComponentActivity() {
                     title = stringResource(R.string.browse_walls),
                     initialFilterTag = sortWallpapersTag,
                     onBackClick = { finish() },
-                    onWallpaperApplied = { finish() },
                 )
             }
         }

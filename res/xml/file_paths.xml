@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     Copyright (C) 2026 The ExpressiveOS Project
+     SPDX-License-Identifier: Apache-2.0
+-->
+<paths>
+    <files-path
+        name="headers"
+        path="headers/" />
+</paths>

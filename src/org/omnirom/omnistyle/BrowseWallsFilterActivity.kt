@@ -36,7 +36,6 @@ class BrowseWallsFilterActivity : ComponentActivity() {
                     title = stringResource(R.string.browse_theme_walls),
                     remoteOnlyFilterTag = filterTag,
                     onBackClick = { finish() },
-                    onWallpaperApplied = { finish() },
                 )
             }
         }
