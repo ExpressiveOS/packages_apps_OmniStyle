@@ -15,6 +15,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     package="org.omnirom.omnistyle"
     android:versionCode="1"
     android:versionName="1.0" >
@@ -30,8 +31,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         android:label="OmniStyle"
         android:icon="@drawable/candy_icon"
         android:theme="@style/Theme.OmniStyle"
+        android:enableOnBackInvokedCallback="true"
         android:requestLegacyExternalStorage="true"
         android:usesCleartextTraffic="true" >
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="org.omnirom.omnistyle.androidx-startup"
+            android:exported="false"
+            tools:replace="android:authorities" />
         <activity
             android:name=".BrowseHeaderActivity"
             android:label="@string/browse_header"

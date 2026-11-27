@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
 Copyright (C) 2017 The OmniROM Project
+Copyright (C) 2026 The ExpressiveOS Project
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -15,15 +16,18 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 -->
-<resources>
+<resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
     <string name="browse_header">Headers</string>
     <string name="custom_header_image_notice">Header image set</string>
+    <string name="custom_header_pack_notice">Dynamic header pack applied</string>
+    <string name="header_saved_pictures_notice">Saved to Pictures</string>
     <string name="browse_walls">Wallpapers</string>
     <string name="omni_walls">WaterSlides</string>
     <string name="wallpaper_type_dialog_title">Set wallpaper</string>
     <string name="wallpaper_type_both">Home screen and lock screen</string>
     <string name="wallpaper_type_system">Home screen</string>
     <string name="wallpaper_type_lock">Lock screen</string>
+    <string name="wallpaper_applied_notice">Wallpaper applied</string>
     <string name="header_creator_label">Creator\u003a </string>
     <string name="no_crop_activity_dialog_text">Omni Gallery app is required to set wallpaper</string>
     <string name="no_crop_activity_dialog_title">Gallery missing</string>
@@ -48,4 +52,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     <string name="download_header_failed_notice">Downloading header failed</string>
     <string name="header_location_local">Local</string>
     <string name="header_location_online">Online</string>
+    <string name="header_selected_badge">Selected</string>
+    <string name="header_pack_active_badge">Active pack</string>
+    <string name="header_apply_pack_action">Apply dynamic pack</string>
+    <string name="header_apply_image_action">Apply header</string>
+    <string name="header_save_image_action">Save</string>
+    <string name="header_pack_items_count"><xliff:g id="count" example="12">%1$d</xliff:g> headers</string>
+    <string name="header_pack_mode_hourly">Time of day</string>
+    <string name="header_pack_mode_calendar">Calendar</string>
+    <string name="header_pack_mode_random">Random shuffle</string>
+    <string name="header_pack_mode_interval">Every <xliff:g id="minutes" example="55">%1$d</xliff:g> min</string>
+    <string name="header_pack_mode_collection">Collection</string>
+    <string name="header_empty_state">No headers available in this collection</string>
+    <string name="wallpaper_empty_state">No wallpapers available</string>
+    <string name="retry_action">Retry</string>
 </resources>

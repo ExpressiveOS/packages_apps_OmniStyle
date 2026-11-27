@@ -1,5 +1,6 @@
 //
 // Copyright (C) 2008 The Android Open Source Project
+// Copyright (C) 2026 The ExpressiveOS Project
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,35 +17,47 @@
 
 android_app {
     name: "OmniStyle",
+    manifest: "AndroidManifest.xml",
 
-    static_libs: [
-        "androidx.appcompat_appcompat",
-        "androidx.core_core",
-        "androidx.cardview_cardview",
-        "androidx.recyclerview_recyclerview",
-        "androidx.gridlayout_gridlayout",
-        "com.google.android.material_material",
-        "lib-picasso-target",
-        "SettingsLib",
+    srcs: [
+        "src/**/*.kt",
     ],
     resource_dirs: ["res"],
-    manifest: "AndroidManifest.xml",
-    srcs: ["src/**/*.java"],
-    privileged: true,
 
+    privileged: true,
     platform_apis: true,
+    system_ext_specific: true,
+
     optimize: {
         enabled: false,
     },
 
-    system_ext_specific: true,
-}
+    static_libs: [
+        "ax_compose",
+        "androidx.activity_activity-compose",
+        "androidx.appcompat_appcompat",
+        "androidx.core_core",
+        "androidx.core_core-ktx",
+        "com.google.android.material_material",
+        "androidx.compose.animation_animation",
+        "androidx.compose.animation_animation-core",
+        "androidx.compose.foundation_foundation",
+        "androidx.compose.material3_material3",
+        "androidx.compose.material_material-icons-core",
+        "androidx.compose.material_material-icons-extended",
+        "androidx.compose.runtime_runtime",
+        "androidx.compose.ui_ui",
+        "androidx.lifecycle_lifecycle-runtime-compose",
+        "androidx.lifecycle_lifecycle-runtime-ktx",
+        "kotlin-stdlib",
+        "kotlinx-coroutines-android",
+        "kotlinx-coroutines-core",
+        "SettingsLib",
+    ],
 
-// Enumerate target prebuilts to avoid linker warnings
-java_import {
-
-    name: "lib-picasso-target",
-    installable: false,
-    jars: ["libs/picasso-2.5.2.jar"],
-
+    kotlincflags: [
+        "-Xjvm-default=all",
+        "-opt-in=kotlin.RequiresOptIn",
+        "-P plugin:androidx.compose.compiler.plugins.kotlin:sourceInformation=true",
+    ],
 }
